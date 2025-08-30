@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateFamilyForm from '@/components/admin/CreateFamilyForm';
 
-
 export default function MaestroFamiliasPage() {
   const { user, claims, loading } = useAuthClaims();
   const role = (claims?.role as string | undefined) || null;
@@ -32,22 +31,6 @@ export default function MaestroFamiliasPage() {
     );
   }
 
-<div className="flex items-center justify-between">
-  <div>
-    <h1 className="text-3xl font-bold text-gray-900">Gestionar familias</h1>
-    <p className="text-gray-600">Crea nuevas familias y gestiona el acceso.</p>
-  </div>
-  <div className="flex gap-2">
-    <Button asChild variant="secondary">
-      <Link href="/maestro/familias/list">Gestionar todas</Link>
-    </Button>
-    <Button asChild variant="outline">
-      <Link href="/maestro">Volver al panel</Link>
-    </Button>
-  </div>
-</div>
-
-
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
       <div className="flex items-center justify-between">
@@ -55,9 +38,14 @@ export default function MaestroFamiliasPage() {
           <h1 className="text-3xl font-bold text-gray-900">Gestionar familias</h1>
           <p className="text-gray-600">Crea nuevas familias y gestiona el acceso.</p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/maestro">Volver al panel</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="secondary">
+            <Link href="/maestro/familias/list">Gestionar todas</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/maestro">Volver al panel</Link>
+          </Button>
+        </div>
       </div>
 
       <Card>
