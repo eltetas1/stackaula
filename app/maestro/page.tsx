@@ -32,7 +32,6 @@ import {
 export default function MaestroPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
 
-  // Datos para el dashboard
   const { avisos: allAvisos, loading: loadingAvisos, refresh: refreshAll } =
     useAvisos({ limit: 5, type: 'all' });
 
@@ -41,14 +40,12 @@ export default function MaestroPage() {
 
   const { subjects, loading: loadingSubjects } = useSubjects();
 
-  // Auth por CUSTOM CLAIMS
   const { user, claims, loading } = useAuthClaims();
   const role = (claims?.role as string | undefined) || null;
   const isTeacher = role === 'admin' || role === 'teacher';
 
   const router = useRouter();
 
-  // Estados de acceso
   if (loading) {
     return (
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -79,7 +76,6 @@ export default function MaestroPage() {
     );
   }
 
-  // --- UI del Panel Maestro ---
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Header */}
@@ -96,9 +92,16 @@ export default function MaestroPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" onClick={logout}>
-            Salir
-          </Button>
+
+          {/* >>> NUEVO: acceso directo a familias + salir */}
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link href="/familia">Gestionar familias</Link>
+            </Button>
+            <Button variant="outline" onClick={logout}>
+              Salir
+            </Button>
+          </div>
         </div>
       </div>
 
