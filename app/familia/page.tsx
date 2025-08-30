@@ -1,15 +1,24 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthClaims } from '@/hooks/useAuthClaims';
 import { useAvisos } from '@/hooks/useAvisos';
 import { Button } from '@/components/ui/button';
+import { ensureFamilyClaims } from '@/lib/ensureFamilyClaims';
 
 export default function FamiliaPage() {
   const { user, claims, loading } = useAuthClaims();
   const { avisos, loading: loadingAvisos, error, hasNext, loadMore } = useAvisos({ limit: 10 });
   const router = useRouter();
+
+  // 🔹 Sincronizar claims al entrar
+  useEffect(() => {
+    if (!loading && user) {
+      ensureFamilyClaims().catch(() => {});
+    }
+  }, [loading, user]);
 
   if (loading) return <div className="p-6">Comprobando sesión…</div>;
   if (!user) { router.push('/login'); return null; }
@@ -35,7 +44,6 @@ export default function FamiliaPage() {
               </p>
             )}
 
-            {/* 🔹 Botón Entregar solo si es tarea */}
             {a.type === 'tarea' && (
               <div className="pt-2">
                 <Button asChild size="sm">

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import SubmitTareaForm from '@/components/familia/SubmitTareaForm';
 import { db } from '@/lib/firebaseClient';
 import { doc, getDoc } from 'firebase/firestore';
+import { ensureFamilyClaims } from '@/lib/ensureFamilyClaims';
 
 type Tarea = { title: string; body?: string };
 
@@ -16,9 +17,11 @@ export default function EntregarTareaPage() {
   const { user, claims, loading } = useAuthClaims();
   const [tarea, setTarea] = useState<Tarea | null>(null);
 
-  // Ajusta estos claims a tu modelo real
-  const familyId = (claims?.familyId as string | undefined) || '';
-  const alumno = (claims?.alumno as string | undefined) || 'Alumno';
+  useEffect(() => {
+    if (!loading && user) {
+      ensureFamilyClaims().catch(() => {});
+    }
+  }, [loading, user]);
 
   useEffect(() => {
     const fetch = async () => {
@@ -29,7 +32,7 @@ export default function EntregarTareaPage() {
   }, [tareaId]);
 
   if (loading) return <div className="p-6">Cargando…</div>;
-  if (!user || !familyId) {
+  if (!user || claims?.role !== 'family' || !claims?.familyId) {
     return (
       <div className="p-6">
         <p>Debes iniciar sesión como familia.</p>
@@ -39,6 +42,9 @@ export default function EntregarTareaPage() {
       </div>
     );
   }
+
+  const familyId = String(claims.familyId);
+  const alumno = String(claims.alumno || 'Alumno');
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-6">
