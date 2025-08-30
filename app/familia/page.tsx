@@ -1,30 +1,44 @@
 'use client';
 
-import { useFamilyFeed } from '@/hooks/useFamilyFeed';
+import { useRouter } from 'next/navigation';
+import { useAuthClaims } from '@/hooks/useAuthClaims';
+import { useAvisos } from '@/hooks/useAvisos';
 
-export default function FamilyPage() {
-  const { items, loading } = useFamilyFeed();
+export default function FamiliaPage() {
+  const { user, claims, loading } = useAuthClaims();
+  const { avisos, loading: loadingAvisos, error, hasNext, loadMore } = useAvisos({ limit: 10 });
+  const router = useRouter();
+
+  if (loading) return <div className="p-6">Comprobando sesión…</div>;
+  if (!user) { router.push('/login'); return null; }
+  if (claims?.role !== 'family') { router.push('/'); return null; }
 
   return (
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-2xl font-bold mb-6">Panel de la Familia</h1>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold">Panel de la Familia</h1>
 
-      {loading ? (
-        <p>Cargando avisos...</p>
-      ) : items.length === 0 ? (
-        <p>No hay avisos disponibles.</p>
-      ) : (
-        <ul className="space-y-4">
-          {items.map((aviso) => (
-            <li key={aviso.id} className="p-4 border rounded-lg shadow-sm">
-              <h2 className="font-semibold text-lg">{aviso.title}</h2>
-              <p className="text-gray-700">{aviso.content}</p>
-              <p className="text-sm text-gray-500">
-                {new Date(aviso.createdAtMs).toLocaleDateString()}
+      {loadingAvisos && <p>Cargando avisos…</p>}
+      {error && <p className="text-red-600">{error}</p>}
+      {!loadingAvisos && avisos.length === 0 && <p>No hay avisos aún.</p>}
+
+      <div className="space-y-4">
+        {avisos.map(a => (
+          <article key={a.id} className="border rounded-2xl p-4">
+            <h2 className="text-lg font-semibold">{a.title}</h2>
+            <p className="mt-1 whitespace-pre-line">{a.body}</p>
+            {a.createdAt?.toDate && (
+              <p className="text-xs text-gray-500 mt-2">
+                {a.createdAt.toDate().toLocaleString()}
               </p>
-            </li>
-          ))}
-        </ul>
+            )}
+          </article>
+        ))}
+      </div>
+
+      {!loadingAvisos && hasNext && (
+        <button className="border px-3 py-2 rounded mt-2" onClick={loadMore}>
+          Ver más
+        </button>
       )}
     </div>
   );

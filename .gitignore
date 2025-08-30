@@ -1,25 +1,17 @@
-# Builds / deps
-.next/
-node_modules/
-out/
-dist/
-.vercel/
-coverage/
+# Node/Next
+node_modules
+.next
+.out
+dist
+.vercel
+.cache
 
-# Logs / cache
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-.cache/
-
-# IDE / SO
-.vscode/
-.DS_Store
-Thumbs.db
-
-# Env y claves locales
+# Env y credenciales locales
 .env*
-!*.example
-serviceAccount.json
 firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.emulator-data
+firebase-export-*
+serviceAccount*.json
+*-firebase-adminsdk-*.json

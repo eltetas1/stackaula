@@ -8,22 +8,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { db, auth } from '@/lib/firebase'; // reexporta firebaseClient
 import { BookOpen, Send } from 'lucide-react';
 import { useSubjects } from '@/hooks/useSubjects';
+import { getIdTokenResult } from 'firebase/auth';
 
-// 👇 NUEVO: prop opcional que avisará al padre para refrescar / volver al dashboard
-type CreateAvisoFormProps = {
-  onCreated?: () => void;
-};
+type CreateAvisoFormProps = { onCreated?: () => void };
 
 export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
   const { toast } = useToast();
   const { subjects } = useSubjects();
 
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState(''); // usamos 'content' para los avisos
+  const [body, setBody] = useState('');       // <- usamos 'body' (no 'content')
   const [published, setPublished] = useState(true);
 
   const [subjectId, setSubjectId] = useState<string>('');
@@ -35,34 +33,22 @@ export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!title.trim() || !content.trim()) {
-      toast({
-        title: 'Faltan datos',
-        description: 'Completa título y contenido.',
-        variant: 'destructive',
-      });
+    if (!title.trim() || !body.trim()) {
+      toast({ title: 'Faltan datos', description: 'Completa título y contenido.', variant: 'destructive' });
       return;
     }
 
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      toast({
-        title: 'Sesión requerida',
-        description: 'Inicia sesión como profesor.',
-        variant: 'destructive',
-      });
+    const user = auth.currentUser;
+    if (!user) {
+      toast({ title: 'Sesión requerida', description: 'Inicia sesión como profesor.', variant: 'destructive' });
       return;
     }
 
-    // comprueba el rol = teacher (coincide con las reglas)
-    const userSnap = await getDoc(doc(db, 'users', uid));
-    const role = userSnap.exists() ? (userSnap.data() as any).role : null;
-    if (role !== 'teacher') {
-      toast({
-        title: 'Sin permisos',
-        description: 'Tu usuario no es profesor.',
-        variant: 'destructive',
-      });
+    // ✅ comprobar permisos por CUSTOM CLAIMS (no por colección users)
+    const token = await getIdTokenResult(user, true);
+    const role = token.claims.role as string | undefined;
+    if (role !== 'admin' && role !== 'teacher') {
+      toast({ title: 'Sin permisos', description: 'Tu usuario no es profesor.', variant: 'destructive' });
       return;
     }
 
@@ -71,12 +57,12 @@ export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
 
       const payload: any = {
         title: title.trim(),
-        content: content.trim(),
-        type: 'aviso',
+        body: body.trim(),          // <- este es el campo que lee tu hook
+        type: 'aviso',              // o 'tarea' si lo cambias más adelante
         published,
         subjectId: subjectId || null,
         createdAt: Timestamp.now(),
-        createdBy: uid,
+        createdBy: user.uid,
         target:
           scope === 'all'
             ? { scope: 'all' }
@@ -91,22 +77,17 @@ export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
 
       // reset
       setTitle('');
-      setContent('');
+      setBody('');
       setPublished(true);
       setSubjectId('');
       setScope('all');
       setFamilyId('');
       setStudentId('');
 
-      // 👇 avisa al padre (page.tsx) para refrescar y volver al dashboard
       onCreated?.();
     } catch (error: any) {
       console.error('Error creating aviso:', error);
-      toast({
-        title: 'Error al crear',
-        description: error?.message ?? 'No se pudo crear el aviso.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error al crear', description: error?.message ?? 'No se pudo crear el aviso.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -124,50 +105,27 @@ export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="title">Título *</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Título del aviso..."
-              required
-            />
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título del aviso..." required />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="content">Contenido *</Label>
-            <Textarea
-              id="content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Escribe el contenido del aviso aquí..."
-              rows={8}
-              required
-            />
+            <Label htmlFor="body">Contenido *</Label>
+            <Textarea id="body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Escribe el contenido del aviso..." rows={8} required />
           </div>
 
           <div className="space-y-2">
             <Label>Asignatura (opcional)</Label>
-            <select
-              className="border p-2 rounded w-full"
-              value={subjectId}
-              onChange={(e) => setSubjectId(e.target.value)}
-            >
+            <select className="border p-2 rounded w-full" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
               <option value="">— Sin asignatura —</option>
               {subjects.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
 
           <div className="space-y-2">
             <Label>Alcance</Label>
-            <select
-              className="border p-2 rounded w-full"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as any)}
-            >
+            <select className="border p-2 rounded w-full" value={scope} onChange={(e) => setScope(e.target.value as any)}>
               <option value="all">Todos</option>
               <option value="family">Una familia</option>
               <option value="student">Un alumno</option>
@@ -177,26 +135,14 @@ export function CreateAvisoForm({ onCreated }: CreateAvisoFormProps) {
           {scope === 'family' && (
             <div className="space-y-2">
               <Label htmlFor="familyId">ID de familia</Label>
-              <Input
-                id="familyId"
-                value={familyId}
-                onChange={(e) => setFamilyId(e.target.value)}
-                placeholder="p.ej. garcia"
-                required
-              />
+              <Input id="familyId" value={familyId} onChange={(e) => setFamilyId(e.target.value)} placeholder="p.ej. garcia" required />
             </div>
           )}
 
           {scope === 'student' && (
             <div className="space-y-2">
               <Label htmlFor="studentId">ID de alumno</Label>
-              <Input
-                id="studentId"
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                placeholder="p.ej. alumno1"
-                required
-              />
+              <Input id="studentId" value={studentId} onChange={(e) => setStudentId(e.target.value)} placeholder="p.ej. alumno1" required />
             </div>
           )}
 

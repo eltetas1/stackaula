@@ -1,0 +1,20 @@
+// Reglas para una única clase
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return request.auth.token.role == 'admin' || request.auth.token.role == 'teacher'; }
+    function isFamily() { return request.auth.token.role == 'family'; }
+
+    match /families/{uid} {
+      allow read: if isSignedIn() && (isAdmin() || (isFamily() && request.auth.uid == uid));
+      allow write: if isAdmin();
+    }
+
+    // Cualquier familia puede leer avisos (solo hay una clase)
+    match /avisos/{id} {
+      allow read: if isAdmin() || isFamily();
+      allow write: if isAdmin();
+    }
+  }
+}

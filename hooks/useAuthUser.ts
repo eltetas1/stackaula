@@ -1,7 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth, db } from '@/lib/firebaseClient'; // 👈 asegúrate que el archivo se llama firebaseClient.ts, no firebase.ts
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  UserCredential 
+} from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
 export function useAuthUser() {
@@ -13,7 +18,8 @@ export function useAuthUser() {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const snap = await getDoc(doc(db, 'users', u.uid));
+        // ⚠️ en tu Firestore tienes coleccion 'families', no 'users'
+        const snap = await getDoc(doc(db, 'families', u.uid));
         setUserDoc(snap.exists() ? { id: snap.id, ...snap.data() } : null);
       } else {
         setUserDoc(null);
@@ -25,8 +31,12 @@ export function useAuthUser() {
   return { user, userDoc, loading };
 }
 
-export async function loginEmail(email: string, password: string) {
-  await signInWithEmailAndPassword(auth, email, password);
+/**
+ * Inicia sesión con email y password.
+ * Devuelve UserCredential para poder leer user.uid, etc.
+ */
+export async function loginEmail(email: string, password: string): Promise<UserCredential> {
+  return await signInWithEmailAndPassword(auth, email, password);
 }
 
 export async function logout() {

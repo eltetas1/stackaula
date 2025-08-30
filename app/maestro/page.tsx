@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuthUser, logout } from '@/hooks/useAuthUser';
+
+import { logout } from '@/hooks/useAuthUser';
+import { useAuthClaims } from '@/hooks/useAuthClaims';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,8 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useAvisos } from '@/hooks/useAvisos';
 import { useSubjects } from '@/hooks/useSubjects';
-import { AvisoSkeletonList } from '@/components/avisos/AvisoSkeleton';
-import { ErrorState } from '@/components/avisos/ErrorState';
+import { Skeleton } from '@/components/ui/skeleton';
+
 import { CreateAvisoForm } from '@/components/maestro/CreateAvisoForm';
 import { CreateTareaForm } from '@/components/maestro/CreateTareaForm';
 import ManageSubjects from '@/components/maestro/ManageSubjects';
@@ -25,30 +28,28 @@ import {
   BarChart3,
   Users,
 } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MaestroPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
-const { avisos: allAvisos, loading: loadingAvisos, refresh: refreshAll } =
-  useAvisos({ limit: 5, type: 'all' });
 
-const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
-  useAvisos({ limit: 5, type: 'tarea' });
+  // Datos para el dashboard
+  const { avisos: allAvisos, loading: loadingAvisos, refresh: refreshAll } =
+    useAvisos({ limit: 5, type: 'all' });
+
+  const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
+    useAvisos({ limit: 5, type: 'tarea' });
 
   const { subjects, loading: loadingSubjects } = useSubjects();
 
+  // Auth por CUSTOM CLAIMS
+  const { user, claims, loading } = useAuthClaims();
+  const role = (claims?.role as string | undefined) || null;
+  const isTeacher = role === 'admin' || role === 'teacher';
+
   const router = useRouter();
-  const { user, userDoc, loading } = useAuthUser();
 
-  // Redirige si no está logueado o no es teacher
-  useEffect(() => {
-    if (!loading) {
-      if (!user) router.replace('/login');
-      else if (userDoc?.role !== 'teacher') router.replace('/');
-    }
-  }, [user, userDoc, loading, router]);
-
-  if (loading || !user || userDoc?.role !== 'teacher') {
+  // Estados de acceso
+  if (loading) {
     return (
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="text-2xl font-bold">Comprobando permisos…</h1>
@@ -56,6 +57,29 @@ const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
     );
   }
 
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <h1 className="text-2xl font-bold mb-2">Inicia sesión</h1>
+        <p className="mb-6">Necesitas una cuenta de profesor para acceder al panel.</p>
+        <Button asChild>
+          <Link href="/login">Ir al login</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (!isTeacher) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <h1 className="text-2xl font-bold">Acceso restringido</h1>
+        <p className="mt-2">Tu usuario no tiene permisos de maestro.</p>
+        <p className="text-sm text-gray-500 mt-1">Rol actual: {String(role ?? 'sin rol')}</p>
+      </div>
+    );
+  }
+
+  // --- UI del Panel Maestro ---
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Header */}
@@ -79,7 +103,6 @@ const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* ⬇️ he pasado a 6 columnas para que quepa el nuevo tab */}
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6 mb-8">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -106,7 +129,6 @@ const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
             <span className="hidden sm:inline">Alumnos</span>
           </TabsTrigger>
 
-          {/* ⬇️ NUEVO TAB: Gestionar */}
           <TabsTrigger value="manage" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">Gestionar</span>
@@ -207,26 +229,26 @@ const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
         </TabsContent>
 
         {/* Crear Aviso */}
-<TabsContent value="create-aviso">
-  <CreateAvisoForm
-    onCreated={() => {
-      refreshAll();        // refresca lista de avisos/tareas del dashboard
-      refreshTareas();
-      setActiveTab('dashboard'); // vuelve al tab principal
-    }}
-  />
-</TabsContent>
+        <TabsContent value="create-aviso">
+          <CreateAvisoForm
+            onCreated={() => {
+              refreshAll();
+              refreshTareas();
+              setActiveTab('dashboard');
+            }}
+          />
+        </TabsContent>
 
         {/* Crear Tarea */}
-<TabsContent value="create-tarea">
-  <CreateTareaForm
-    onCreated={() => {
-      refreshAll();
-      refreshTareas();
-      setActiveTab('dashboard');
-    }}
-  />
-</TabsContent>
+        <TabsContent value="create-tarea">
+          <CreateTareaForm
+            onCreated={() => {
+              refreshAll();
+              refreshTareas();
+              setActiveTab('dashboard');
+            }}
+          />
+        </TabsContent>
 
         {/* Asignaturas */}
         <TabsContent value="subjects">
@@ -254,7 +276,7 @@ const { avisos: recentTareas, loading: loadingTareas, refresh: refreshTareas } =
           </Card>
         </TabsContent>
 
-        {/* ⬇️ NUEVO: Gestión de Avisos y Tareas */}
+        {/* Gestionar Avisos y Tareas */}
         <TabsContent value="manage">
           <ManageAvisosTareas />
         </TabsContent>
