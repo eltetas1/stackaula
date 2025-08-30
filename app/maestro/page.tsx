@@ -93,15 +93,16 @@ export default function MaestroPage() {
             </div>
           </div>
 
-          {/* >>> NUEVO: acceso directo a familias + salir */}
-          <div className="flex items-center gap-2">
-            <Button asChild>
-              <Link href="/familia">Gestionar familias</Link>
-            </Button>
-            <Button variant="outline" onClick={logout}>
-              Salir
-            </Button>
-          </div>
+      
+              {/* >>> Acceso directo a familias (nuevo destino) */}
+              <div className="flex items-center gap-2">
+                <Button asChild>
+                  <Link href="/maestro/familias">Gestionar familias</Link>
+                </Button>
+                <Button variant="outline" onClick={logout}>
+                  Salir
+                </Button>
+              </div>
         </div>
       </div>
 
