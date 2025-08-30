@@ -1,8 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuthClaims } from '@/hooks/useAuthClaims';
 import { useAvisos } from '@/hooks/useAvisos';
+import { Button } from '@/components/ui/button';
 
 export default function FamiliaPage() {
   const { user, claims, loading } = useAuthClaims();
@@ -22,14 +24,24 @@ export default function FamiliaPage() {
       {!loadingAvisos && avisos.length === 0 && <p>No hay avisos aún.</p>}
 
       <div className="space-y-4">
-        {avisos.map(a => (
-          <article key={a.id} className="border rounded-2xl p-4">
+        {avisos.map((a) => (
+          <article key={a.id} className="border rounded-2xl p-4 space-y-2">
             <h2 className="text-lg font-semibold">{a.title}</h2>
-            <p className="mt-1 whitespace-pre-line">{a.body}</p>
+            <p className="whitespace-pre-line">{a.body}</p>
+
             {a.createdAt?.toDate && (
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500">
                 {a.createdAt.toDate().toLocaleString()}
               </p>
+            )}
+
+            {/* 🔹 Botón Entregar solo si es tarea */}
+            {a.type === 'tarea' && (
+              <div className="pt-2">
+                <Button asChild size="sm">
+                  <Link href={`/familia/tareas/${a.id}/entregar`}>Entregar</Link>
+                </Button>
+              </div>
             )}
           </article>
         ))}
