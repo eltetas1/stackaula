@@ -1,11 +1,15 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { useAuthUser } from '@/hooks/useAuthUser';
+import { auth } from '@/lib/firebase';
 
 export default function EntregarTareaPage() {
   const { tareaId } = useParams<{ tareaId: string }>();
+  const router = useRouter();
+  const { user, loading } = useAuthUser();
 
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
@@ -14,11 +18,33 @@ export default function EntregarTareaPage() {
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Si ya sabemos que NO hay sesión, mostramos CTA a login
+  if (!loading && !user) {
+    return (
+      <div className="max-w-xl mx-auto p-6 space-y-4">
+        <h1 className="text-2xl font-semibold">Entregar tarea</h1>
+        <p className="text-muted-foreground">
+          Para entregar necesitas iniciar sesión.
+        </p>
+        <div className="flex gap-3">
+          <Button onClick={() => router.push('/login')}>Ir a Login</Button>
+          <Button variant="outline" onClick={() => router.push('/tareas')}>
+            Ver tareas
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setOk(false);
 
+    if (!user) {
+      setError('Debes iniciar sesión.');
+      return;
+    }
     if (!nombre.trim() || !apellidos.trim()) {
       setError('Escribe nombre y apellidos.');
       return;
@@ -30,9 +56,14 @@ export default function EntregarTareaPage() {
 
     try {
       setEnviando(true);
-      const res = await fetch('/api/entregas-public', {
+      const idToken = await auth.currentUser!.getIdToken(/* forceRefresh */ true);
+
+      const res = await fetch('/api/entregas-auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           tareaId: String(tareaId),
           nombre: nombre.trim(),
@@ -40,8 +71,10 @@ export default function EntregarTareaPage() {
           linkURL: linkURL.trim(),
         }),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'No se pudo enviar');
+
       setOk(true);
       setNombre('');
       setApellidos('');
@@ -98,7 +131,7 @@ export default function EntregarTareaPage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
         {ok && <p className="text-sm text-emerald-600">¡Entrega enviada correctamente!</p>}
 
-        <Button type="submit" disabled={enviando} className="w-full">
+        <Button type="submit" disabled={loading || enviando} className="w-full">
           {enviando ? 'Enviando…' : 'Enviar entrega'}
         </Button>
       </form>
