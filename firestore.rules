@@ -1,20 +1,53 @@
-// Reglas para una única clase
+// firestore.rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
-    function isAdmin() { return request.auth.token.role == 'admin' || request.auth.token.role == 'teacher'; }
-    function isFamily() { return request.auth.token.role == 'family'; }
 
-    match /families/{uid} {
-      allow read: if isSignedIn() && (isAdmin() || (isFamily() && request.auth.uid == uid));
-      allow write: if isAdmin();
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Cualquier familia puede leer avisos (solo hay una clase)
+    function isTeacher() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "teacher";
+    }
+
+    // Subjects: lectura pública; escritura solo profesor
+    match /subjects/{id} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    // Avisos/Tareas: lectura pública solo si published == true
     match /avisos/{id} {
-      allow read: if isAdmin() || isFamily();
-      allow write: if isAdmin();
+      allow read: if resource.data.published == true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    // Datos de usuarios
+    match /users/{uid} {
+      // El propio usuario o un teacher puede leer
+      allow read: if isSignedIn() && (uid == request.auth.uid || isTeacher());
+      // Crear el propio doc (por ejemplo al registrarse la primera vez)
+      allow create: if isSignedIn() && uid == request.auth.uid;
+      // Actualizar propio doc o teacher
+      allow update: if isSignedIn() && (uid == request.auth.uid || isTeacher());
+      allow delete: if false;
+    }
+
+    // Entregas
+    match /entregas/{id} {
+      // Leer: el propietario (userId) o cualquier teacher
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isTeacher()
+      );
+
+      // Crear: autenticado y que userId del documento sea el propio
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Editar/Eliminar: solo teacher
+      allow update, delete: if isTeacher();
     }
   }
 }
