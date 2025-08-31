@@ -25,6 +25,7 @@ export function useAuthUser() {
           return;
         }
         const snap = await getDoc(doc(db, 'users', fbUser.uid));
+        console.log("User doc en Firestore:", snap.data());
         const data = snap.exists() ? (snap.data() as any) : {};
         setUser({
           uid: fbUser.uid,
