@@ -41,7 +41,7 @@ export default function SubmitTareaForm({ tareaId, onCreated }: Props) {
 
       const docRef = await addDoc(collection(db, 'entregas'), {
         tareaId,
-        userId: user.uid,                 // ← CLAVE para pasar reglas
+        userId: user.uid,                 // 🔑 requerido por las reglas
         familyEmail: user.email ?? null,  // para notificaciones
         nombre: nombre.trim(),
         apellidos: apellidos.trim(),
@@ -57,7 +57,6 @@ export default function SubmitTareaForm({ tareaId, onCreated }: Props) {
       setLink('');
       onCreated?.(docRef.id);
     } catch (e: any) {
-      // Mensaje más claro cuando son reglas
       const msg = String(e?.message || '');
       if (msg.includes('Missing or insufficient permissions')) {
         setErr('Permisos insuficientes: inicia sesión con la familia correcta.');
