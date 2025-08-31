@@ -3,21 +3,28 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { doc, collection, onSnapshot, orderBy, query, updateDoc, Timestamp } from 'firebase/firestore';
+import { useAuthUser } from '@/hooks/useAuthUser';
 import { db } from '@/lib/firebase';
-
-import { useUserRole } from '@/hooks/useUserRole';
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  doc,
+  Timestamp,
+} from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Entrega = {
   id: string;
-  tareaId?: string;
-  alumnoNombre?: string;
-  alumnoApellidos?: string;
-  linkURL?: string;        // soportamos ambas
-  linkUrl?: string;        // soportamos ambas
-  createdAt?: any;         // Firestore Timestamp | number | Date
+  tareaId: string;
+  alumnoNombre: string;
+  alumnoApellidos: string;
+  linkURL?: string; // soportamos ambas
+  linkUrl?: string; // soportamos ambas
+  createdAt?: any; // Timestamp | Date | number
   status?: 'pendiente' | 'revisada' | 'aprobada' | 'rechazada';
   familyId?: string;
   uid?: string;
@@ -26,45 +33,45 @@ type Entrega = {
 };
 
 export default function MaestroEntregasPage() {
-  // 🔒 permisos basados en Firestore (users/{uid})
-  const { user, role, loading: loadingRole } = useUserRole();
-  const isTeacher = useMemo(() => role === 'teacher' || role === 'admin', [role]);
+  const { user, loading } = useAuthUser();
+  const isTeacher = useMemo(
+    () => user?.role === 'teacher' || user?.role === 'admin',
+    [user]
+  );
 
   const [items, setItems] = useState<Entrega[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
-  const [filtro, setFiltro] = useState<'todas' | NonNullable<Entrega['status']>>('todas');
+  const [filtro, setFiltro] = useState<'todas' | Entrega['status']>('todas');
 
-  // ▶️ Suscripción en tiempo real a la colección 'entregas'
   useEffect(() => {
-    if (loadingRole) return;
+    if (loading) return;
     if (!isTeacher) return;
 
     setLoadingList(true);
     const q = query(collection(db, 'entregas'), orderBy('createdAt', 'desc'));
+
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows: Entrega[] = snap.docs.map((d) => {
+        const rows = snap.docs.map((d) => {
           const data = d.data() as any;
 
-          // Normalizamos createdAt a Date
-          let created: Date | undefined;
-          const raw = data?.createdAt;
-          if (raw instanceof Timestamp) created = raw.toDate();
-          else if (raw && typeof raw.toDate === 'function') created = raw.toDate();
-          else if (typeof raw === 'number') created = new Date(raw);
-          else if (raw instanceof Date) created = raw;
-          else created = undefined;
+          // Normalizamos createdAt a Date si es posible
+          let createdAt = data?.createdAt;
+          if (createdAt instanceof Timestamp) createdAt = createdAt.toDate();
+          else if (createdAt && typeof createdAt.toDate === 'function') createdAt = createdAt.toDate();
+          else if (typeof createdAt === 'number') createdAt = new Date(createdAt);
 
           return {
             id: d.id,
-            ...data,
-            createdAt: created ?? data?.createdAt, // guardamos la Date si la hay
+            ...(data as any),
+            createdAt,
+            // si viene linkUrl en vez de linkURL, usamos cualquiera
+            linkURL: data?.linkURL ?? data?.linkUrl ?? '',
             status: (data?.status as Entrega['status']) ?? 'pendiente',
           } as Entrega;
         });
-
         setItems(rows);
         setLoadingList(false);
       },
@@ -72,24 +79,23 @@ export default function MaestroEntregasPage() {
     );
 
     return () => unsub();
-  }, [loadingRole, isTeacher]);
+  }, [loading, isTeacher]);
 
   async function setStatus(id: string, status: NonNullable<Entrega['status']>) {
     try {
       setBusyId(id);
       await updateDoc(doc(db, 'entregas', id), { status });
-      // Optimistic UI
       setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
     } finally {
       setBusyId(null);
     }
   }
 
-  if (loadingRole) return <main className="p-6">Cargando…</main>;
+  if (loading) return <main className="p-6">Cargando…</main>;
 
-  if (!user || !isTeacher) {
+  if (!isTeacher) {
     return (
-      <main className="container mx-auto p-6 space-y-4">
+      <main className="p-6 space-y-3">
         <h1 className="text-xl font-semibold">Entregas</h1>
         <p className="text-muted-foreground">Acceso solo para profesorado.</p>
         <Button asChild variant="outline">
@@ -100,7 +106,7 @@ export default function MaestroEntregasPage() {
   }
 
   const visibles =
-    filtro === 'todas' ? items : items.filter((e) => ((e.status || 'pendiente') === filtro));
+    filtro === 'todas' ? items : items.filter((e) => (e.status || 'pendiente') === filtro);
 
   return (
     <main className="container mx-auto p-6 space-y-6">
@@ -136,9 +142,9 @@ export default function MaestroEntregasPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {visibles.map((e) => {
             const createdAtMs =
-              e?.createdAt instanceof Date
+              e.createdAt instanceof Date
                 ? e.createdAt.getTime()
-                : typeof (e?.createdAt as any)?.toMillis === 'function'
+                : typeof (e.createdAt as any)?.toMillis === 'function'
                 ? (e.createdAt as any).toMillis()
                 : undefined;
 
@@ -148,9 +154,9 @@ export default function MaestroEntregasPage() {
               <Card key={e.id}>
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    {e.alumnoNombre ?? 'Alumno'} {e.alumnoApellidos ?? ''}{' '}
+                    {e.alumnoNombre} {e.alumnoApellidos}{' '}
                     <span className="text-muted-foreground font-normal">
-                      — Tarea {e.tareaId ?? '—'}
+                      — Tarea {e.tareaId}
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -169,9 +175,9 @@ export default function MaestroEntregasPage() {
                       <span className="text-muted-foreground">Sin archivo/enlace</span>
                     )}
                   </p>
-
                   <p className="text-sm text-muted-foreground">
-                    Estado: <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
+                    Estado:{' '}
+                    <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
                     {createdAtMs && ` · ${new Date(createdAtMs).toLocaleString()}`}
                     {e.source && ` · ${e.source}`}
                   </p>
