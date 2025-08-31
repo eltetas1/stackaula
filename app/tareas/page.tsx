@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { useAuthUser } from '@/hooks/useAuthUser';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -16,18 +15,15 @@ type Tarea = {
 };
 
 export default function TareasPage() {
-  const { user, loading } = useAuthUser(); // user?.role === 'family' | 'teacher' | undefined
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [tareasLoading, setTareasLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ——— CARGAR SOLO TAREAS PÚBLICAS ———
   useEffect(() => {
     const fetchTareas = async () => {
       setTareasLoading(true);
       setError(null);
       try {
-        // Reglas: /avisos es de lectura pública
         const q = query(
           collection(db, 'avisos'),
           where('type', '==', 'tarea'),
@@ -62,7 +58,6 @@ export default function TareasPage() {
     fetchTareas();
   }, []);
 
-  // ——— RENDER ———
   return (
     <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold mb-4">Tareas</h1>
@@ -87,20 +82,9 @@ export default function TareasPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {t.body && <p className="whitespace-pre-line">{t.body}</p>}
-
-                {loading ? (
-                  <Button disabled>Comprobando sesión…</Button>
-                ) : user?.role === 'family' ? (
-                  <Button asChild>
-                    <Link href={`/familia/tareas/${t.id}/entregar`}>Entregar</Link>
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Button asChild variant="outline">
-                      <Link href="/familia">Inicia sesión como familia</Link>
-                    </Button>
-                  </div>
-                )}
+                <Button asChild>
+                  <Link href={`/familia/tareas/${t.id}/entregar`}>Entregar</Link>
+                </Button>
               </CardContent>
             </Card>
           ))}
