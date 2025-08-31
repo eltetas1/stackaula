@@ -1,89 +1,98 @@
+// components/familia/SubmitTareaForm.tsx
 'use client';
 
 import { useState } from 'react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useAuthUser } from '@/hooks/useAuthUser';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type Props = {
-  tareaId: string; // id de la tarea a la que se entrega
+  tareaId: string;
+  onCreated?: (entregaId: string) => void;
 };
 
-export default function SubmitTareaForm({ tareaId }: Props) {
-  const { user, loading } = useAuthUser();
-  const [linkURL, setLinkURL] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
+export default function SubmitTareaForm({ tareaId, onCreated }: Props) {
+  const { user } = useAuthUser();
+  const [nombre, setNombre] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [link, setLink] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const canCreate =
-    !loading &&
-    !!user &&
-    user.role === 'family' &&
-    !!user.familyId &&
-    !!tareaId;
-
-  async function onSubmit(e: React.FormEvent) {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setOk(false);
+    setErr(null);
+    setOk(null);
 
-    if (!canCreate) {
-      setError('Debes iniciar sesión como familia para entregar esta tarea.');
+    if (!user) {
+      setErr('Debes iniciar sesión para entregar.');
       return;
     }
-
-    if (!/^https?:\/\//i.test(linkURL.trim())) {
-      setError('Introduce un enlace válido (http/https).');
+    if (!link.trim()) {
+      setErr('Añade el enlace de la entrega.');
       return;
     }
 
     try {
-      setSending(true);
-      await addDoc(collection(db, 'entregas'), {
+      setBusy(true);
+
+      const docRef = await addDoc(collection(db, 'entregas'), {
         tareaId,
-        familyId: user!.familyId, // 🔒 se obtiene del usuario logueado
-        linkURL: linkURL.trim(),
+        userId: user.uid,                 // ← CLAVE para pasar reglas
+        familyEmail: user.email ?? null,  // para notificaciones
+        nombre: nombre.trim(),
+        apellidos: apellidos.trim(),
+        url: link.trim(),
+        status: 'pendiente',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
-      setOk(true);
-      setLinkURL('');
-    } catch (err: any) {
-      console.error('Error creando entrega:', err);
-      setError('No se pudo registrar la entrega. ¿Tienes permisos y sesión iniciada?');
+
+      setOk('Entrega enviada.');
+      setNombre('');
+      setApellidos('');
+      setLink('');
+      onCreated?.(docRef.id);
+    } catch (e: any) {
+      // Mensaje más claro cuando son reglas
+      const msg = String(e?.message || '');
+      if (msg.includes('Missing or insufficient permissions')) {
+        setErr('Permisos insuficientes: inicia sesión con la familia correcta.');
+      } else {
+        setErr('No se pudo enviar la entrega.');
+      }
     } finally {
-      setSending(false);
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
-      <div>
-        <label className="block text-sm font-medium">Enlace (Drive, vídeo, etc.)</label>
-        <input
-          className="w-full border rounded p-2"
-          placeholder="https://..."
-          value={linkURL}
-          onChange={(e) => setLinkURL(e.target.value)}
-        />
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm">Nombre</label>
+          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-sm">Apellidos</label>
+          <Input value={apellidos} onChange={(e) => setApellidos(e.target.value)} />
+        </div>
       </div>
 
-      {!canCreate && !loading && (
-        <p className="text-sm text-amber-600">
-          Inicia sesión como <b>familia</b> para poder entregar.
-        </p>
-      )}
+      <div>
+        <label className="text-sm">Enlace de la entrega</label>
+        <Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
+      </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {ok && <p className="text-sm text-emerald-600">¡Entrega enviada!</p>}
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {ok && <p className="text-sm text-green-700">{ok}</p>}
 
-      <button
-        type="submit"
-        disabled={!canCreate || sending}
-        className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-      >
-        {sending ? 'Enviando…' : 'Entregar'}
-      </button>
+      <Button type="submit" disabled={busy}>
+        {busy ? 'Enviando…' : 'Enviar entrega'}
+      </Button>
     </form>
   );
 }
