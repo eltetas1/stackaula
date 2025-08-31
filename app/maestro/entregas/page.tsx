@@ -16,6 +16,9 @@ import {
   startAfter,
   getDocs,
   getDoc,
+  addDoc,
+  serverTimestamp,
+  where,
 } from 'firebase/firestore';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from '@/components/ui/button';
@@ -34,6 +37,7 @@ type Entrega = {
   createdAt?: any;
   status?: Status;
   comentarioDocente?: string;
+  nota?: number | null; // ← NUEVO
   familyId?: string;
   uid?: string;
   source?: 'public' | 'auth';
@@ -42,7 +46,6 @@ type Entrega = {
 
 const PAGE_SIZE = 12;
 
-// --- helpers ---
 const toDate = (v: any): Date | undefined => {
   if (!v) return undefined;
   if (v instanceof Date) return v;
@@ -60,33 +63,29 @@ const statusLabel: Record<Status, string> = {
 };
 
 const statusClass: Record<Status, string> = {
-  pendiente:
-    'bg-amber-100 text-amber-800 border-amber-200',
-  revisada:
-    'bg-sky-100 text-sky-800 border-sky-200',
-  aprobada:
-    'bg-emerald-100 text-emerald-800 border-emerald-200',
-  rechazada:
-    'bg-rose-100 text-rose-800 border-rose-200',
+  pendiente: 'bg-amber-100 text-amber-800 border-amber-200',
+  revisada: 'bg-sky-100 text-sky-800 border-sky-200',
+  aprobada: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  rechazada: 'bg-rose-100 text-rose-800 border-rose-200',
 };
 
 export default function MaestroEntregasPage() {
   const { user, role, loading } = useUserRole();
   const isTeacher = useMemo(() => role === 'teacher' || role === 'admin', [role]);
 
-  // datos
   const [items, setItems] = useState<Entrega[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const lastDocRef = useRef<any>(null);
 
-  // comentarios (auto-save)
+  // estado local: comentarios y notas con autosave
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [notas, setNotas] = useState<Record<string, string>>({});
   const timersRef = useRef<Record<string, any>>({});
   const [savedOk, setSavedOk] = useState<Record<string, boolean>>({});
 
-  // tareas (lookup)
+  // lookup títulos de tareas
   const [tasksById, setTasksById] = useState<Record<string, { title?: string }>>({});
 
   // filtros
@@ -96,18 +95,14 @@ export default function MaestroEntregasPage() {
   const [fDesde, setFDesde] = useState<string>(''); // YYYY-MM-DD
   const [fHasta, setFHasta] = useState<string>(''); // YYYY-MM-DD
 
-  // --- carga inicial en vivo (primer PAGE_SIZE) ---
+  // carga en vivo (primer bloque)
   useEffect(() => {
     if (loading || !isTeacher) return;
     setLoadingList(true);
-    const q = query(
-      collection(db, 'entregas'),
-      orderBy('createdAt', 'desc'),
-      qlimit(PAGE_SIZE)
-    );
 
+    const base = query(collection(db, 'entregas'), orderBy('createdAt', 'desc'), qlimit(PAGE_SIZE));
     const unsub = onSnapshot(
-      q,
+      base,
       async (snap) => {
         const rows = snap.docs.map((d) => {
           const data = d.data() as any;
@@ -119,15 +114,15 @@ export default function MaestroEntregasPage() {
             linkURL: data?.linkURL ?? data?.linkUrl ?? '',
             status: (data?.status as Status) ?? 'pendiente',
             comentarioDocente: data?.comentarioDocente ?? '',
+            nota: typeof data?.nota === 'number' ? data.nota : null,
           } as Entrega;
         });
         setItems(rows);
 
-        // últimas referencias para paginación (usamos el último del snapshot)
         lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null;
         setHasMore(Boolean(lastDocRef.current));
 
-        // preparar estado de comentarios
+        // precargar controles
         setComentarios((prev) => {
           const next = { ...prev };
           rows.forEach((e) => {
@@ -135,23 +130,27 @@ export default function MaestroEntregasPage() {
           });
           return next;
         });
+        setNotas((prev) => {
+          const next = { ...prev };
+          rows.forEach((e) => {
+            if (next[e.id] === undefined) next[e.id] = e.nota != null ? String(e.nota) : '';
+          });
+          return next;
+        });
 
-        // lookup de títulos de tareas que falten
-        const ids = Array.from(
-          new Set(rows.map((r) => r.tareaId).filter(Boolean) as string[])
-        ).filter((id) => !tasksById[id]);
+        // lookup títulos de tareas
+        const ids = Array.from(new Set(rows.map((r) => r.tareaId).filter(Boolean) as string[]))
+          .filter((id) => !tasksById[id]);
         if (ids.length) {
           const entries: Record<string, { title?: string }> = {};
-          await Promise.all(
-            ids.map(async (id) => {
-              try {
-                const snap = await getDoc(doc(db, 'tareas', id));
-                entries[id] = { title: snap.exists() ? (snap.data() as any)?.title : undefined };
-              } catch {
-                entries[id] = { title: undefined };
-              }
-            })
-          );
+          await Promise.all(ids.map(async (id) => {
+            try {
+              const s = await getDoc(doc(db, 'tareas', id));
+              entries[id] = { title: s.exists() ? (s.data() as any)?.title : undefined };
+            } catch {
+              entries[id] = { title: undefined };
+            }
+          }));
           setTasksById((prev) => ({ ...prev, ...entries }));
         }
 
@@ -164,16 +163,15 @@ export default function MaestroEntregasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, isTeacher]);
 
-  // --- cargar más (no live) ---
   const loadMore = async () => {
     if (!lastDocRef.current) return;
-    const q = query(
+    const q2 = query(
       collection(db, 'entregas'),
       orderBy('createdAt', 'desc'),
       startAfter(lastDocRef.current),
       qlimit(PAGE_SIZE)
     );
-    const snap = await getDocs(q);
+    const snap = await getDocs(q2);
     const rows = snap.docs.map((d) => {
       const data = d.data() as any;
       const createdAt = toDate(data?.createdAt);
@@ -184,25 +182,23 @@ export default function MaestroEntregasPage() {
         linkURL: data?.linkURL ?? data?.linkUrl ?? '',
         status: (data?.status as Status) ?? 'pendiente',
         comentarioDocente: data?.comentarioDocente ?? '',
+        nota: typeof data?.nota === 'number' ? data.nota : null,
       } as Entrega;
     });
 
-    // lookup tareas faltantes
-    const ids = Array.from(
-      new Set(rows.map((r) => r.tareaId).filter(Boolean) as string[])
-    ).filter((id) => !tasksById[id]);
+    // lookup tareas
+    const ids = Array.from(new Set(rows.map((r) => r.tareaId).filter(Boolean) as string[]))
+      .filter((id) => !tasksById[id]);
     if (ids.length) {
       const entries: Record<string, { title?: string }> = {};
-      await Promise.all(
-        ids.map(async (id) => {
-          try {
-            const snap = await getDoc(doc(db, 'tareas', id));
-            entries[id] = { title: snap.exists() ? (snap.data() as any)?.title : undefined };
-          } catch {
-            entries[id] = { title: undefined };
-          }
-        })
-      );
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const s = await getDoc(doc(db, 'tareas', id));
+          entries[id] = { title: s.exists() ? (s.data() as any)?.title : undefined };
+        } catch {
+          entries[id] = { title: undefined };
+        }
+      }));
       setTasksById((prev) => ({ ...prev, ...entries }));
     }
 
@@ -211,20 +207,32 @@ export default function MaestroEntregasPage() {
     setHasMore(Boolean(lastDocRef.current));
   };
 
-  // --- acciones ---
+  // notificación “in-app” en colección notifications
+  async function portalNotify(entrega: Entrega, title: string, message: string) {
+    if (!entrega.familyId) return;
+    await addDoc(collection(db, 'notifications'), {
+      type: 'entrega_update',
+      familyId: entrega.familyId,
+      entregaId: entrega.id,
+      title,
+      message,
+      status: 'unread',
+      createdAt: serverTimestamp(),
+    });
+  }
+
   async function setStatus(id: string, status: Status) {
     try {
       setBusyId(id);
       await updateDoc(doc(db, 'entregas', id), { status, updatedAt: new Date() });
 
-      // notificación a familia (si hay familyId)
       const entrega = items.find((e) => e.id === id);
-      if (entrega?.familyId) {
-        const title = `Estado de la entrega actualizado: ${statusLabel[status]}`;
-        const message = `La entrega de ${entrega.alumnoNombre ?? 'el alumno'} para la tarea "${tasksById[entrega.tareaId || '']?.title ?? entrega.tareaId ?? ''}" ha sido marcada como ${statusLabel[status]}.`;
-        await updateDoc(doc(collection(db, 'notifications')), {} as any).catch(() => {});
-        // ↑ HACK: si no tienes addDoc importado. Mejor usa addDoc:
-        // await addDoc(collection(db, 'notifications'), { ...payload });
+      if (entrega) {
+        await portalNotify(
+          entrega,
+          `Estado actualizado: ${statusLabel[status]}`,
+          `Tu entrega para "${tasksById[entrega.tareaId || '']?.title ?? entrega.tareaId ?? ''}" ha sido marcada como ${statusLabel[status]}.`
+        );
       }
 
       setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
@@ -233,38 +241,58 @@ export default function MaestroEntregasPage() {
     }
   }
 
-  // auto-guardado con debounce 600ms
-  const onChangeComentario = (id: string, texto: string) => {
-    setComentarios((prev) => ({ ...prev, [id]: texto }));
-    setSavedOk((prev) => ({ ...prev, [id]: false }));
-
-    if (timersRef.current[id]) clearTimeout(timersRef.current[id]);
-    timersRef.current[id] = setTimeout(async () => {
-      try {
-        setBusyId(id);
-        await updateDoc(doc(db, 'entregas', id), {
-          comentarioDocente: texto,
-          updatedAt: new Date(),
-        });
-
-        // notificación a familia
-        const entrega = items.find((e) => e.id === id);
-        if (entrega?.familyId && texto.trim()) {
-          const title = `Nuevo comentario del profesor`;
-          const message = texto.trim();
-          await updateDoc(doc(collection(db, 'notifications')), {} as any).catch(() => {});
-          // Mejor con addDoc:
-          // await addDoc(collection(db, 'notifications'), { ...payload });
-        }
-
-        setSavedOk((prev) => ({ ...prev, [id]: true }));
-      } finally {
-        setBusyId(null);
-      }
+  // autosave generic (para comentario / nota)
+  const debouncedSave = (key: string, fn: () => Promise<void>) => {
+    if (timersRef.current[key]) clearTimeout(timersRef.current[key]);
+    timersRef.current[key] = setTimeout(async () => {
+      await fn();
+      setSavedOk((prev) => ({ ...prev, [key]: true }));
     }, 600);
   };
 
-  // --- preparación de filtros / visibles ---
+  const onChangeComentario = (id: string, texto: string) => {
+    setComentarios((prev) => ({ ...prev, [id]: texto }));
+    setSavedOk((prev) => ({ ...prev, [id + ':c']: false }));
+    debouncedSave(id + ':c', async () => {
+      setBusyId(id);
+      await updateDoc(doc(db, 'entregas', id), {
+        comentarioDocente: texto,
+        updatedAt: new Date(),
+      });
+      const e = items.find((x) => x.id === id);
+      if (e && e.familyId && texto.trim()) {
+        await portalNotify(e, 'Nuevo comentario del profesor', texto.trim());
+      }
+      setBusyId(null);
+    });
+  };
+
+  const onChangeNota = (id: string, valor: string) => {
+    // guardamos vacío o número válido entre 0 y 10
+    const parsed = valor === '' ? '' : String(Math.max(0, Math.min(10, Number(valor))));
+    setNotas((prev) => ({ ...prev, [id]: parsed }));
+    setSavedOk((prev) => ({ ...prev, [id + ':n']: false }));
+    debouncedSave(id + ':n', async () => {
+      setBusyId(id);
+      const notaField = parsed === '' ? null : Number(parsed);
+      await updateDoc(doc(db, 'entregas', id), {
+        nota: notaField,
+        updatedAt: new Date(),
+      });
+      const e = items.find((x) => x.id === id);
+      if (e && e.familyId && notaField != null) {
+        await portalNotify(
+          e,
+          'Nueva nota publicada',
+          `Tu entrega de "${tasksById[e.tareaId || '']?.title ?? e.tareaId ?? ''}" ha sido calificada con ${notaField}.`
+        );
+      }
+      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, nota: notaField } : x)));
+      setBusyId(null);
+    });
+  };
+
+  // opciones para filtros en cliente
   const tareasEnLista = useMemo(() => {
     const set = new Set<string>();
     items.forEach((e) => e.tareaId && set.add(e.tareaId));
@@ -273,28 +301,16 @@ export default function MaestroEntregasPage() {
 
   const visibles = useMemo(() => {
     let rows = items;
-
-    // estado
-    if (fEstado !== 'todas') {
-      rows = rows.filter((e) => (e.status || 'pendiente') === fEstado);
-    }
-
-    // alumno (search simple por nombre/apellidos)
-    const q = searchAlumno.trim().toLowerCase();
-    if (q) {
+    if (fEstado !== 'todas') rows = rows.filter((e) => (e.status || 'pendiente') === fEstado);
+    const qtxt = searchAlumno.trim().toLowerCase();
+    if (qtxt) {
       rows = rows.filter((e) => {
         const n = (e.alumnoNombre || '').toLowerCase();
         const a = (e.alumnoApellidos || '').toLowerCase();
-        return n.includes(q) || a.includes(q);
+        return n.includes(qtxt) || a.includes(qtxt);
       });
     }
-
-    // tarea
-    if (fTarea !== 'todas') {
-      rows = rows.filter((e) => e.tareaId === fTarea);
-    }
-
-    // rango fechas
+    if (fTarea !== 'todas') rows = rows.filter((e) => e.tareaId === fTarea);
     const dFrom = fDesde ? new Date(fDesde + 'T00:00:00') : null;
     const dTo = fHasta ? new Date(fHasta + 'T23:59:59') : null;
     if (dFrom || dTo) {
@@ -306,54 +322,8 @@ export default function MaestroEntregasPage() {
         return true;
       });
     }
-
     return rows;
   }, [items, fEstado, searchAlumno, fTarea, fDesde, fHasta]);
-
-  // --- export CSV ---
-  const exportCSV = () => {
-    const header = [
-      'fecha',
-      'alumnoNombre',
-      'alumnoApellidos',
-      'tareaId',
-      'tareaTitulo',
-      'estado',
-      'enlace',
-      'comentarioDocente',
-      'source',
-    ];
-    const lines = visibles.map((e) => {
-      const fecha = toDate(e.createdAt)?.toISOString() ?? '';
-      const tareaTitulo = tasksById[e.tareaId || '']?.title ?? '';
-      const link = e.linkURL || e.linkUrl || '';
-      const estado = e.status || 'pendiente';
-      return [
-        fecha,
-        e.alumnoNombre || '',
-        e.alumnoApellidos || '',
-        e.tareaId || '',
-        tareaTitulo,
-        estado,
-        link,
-        (e.comentarioDocente || '').replace(/\n/g, ' '),
-        e.source || '',
-      ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(',');
-    });
-
-    const csv = [header.join(','), ...lines].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `entregas_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   if (loading) return <main className="p-6">Cargando…</main>;
   if (!user || !isTeacher) {
@@ -382,23 +352,14 @@ export default function MaestroEntregasPage() {
             value={searchAlumno}
             onChange={(e) => setSearchAlumno(e.target.value)}
           />
-          <select
-            className="border rounded px-2 py-1 text-sm"
-            value={fEstado}
-            onChange={(e) => setFEstado(e.target.value as any)}
-          >
+          <select className="border rounded px-2 py-1 text-sm" value={fEstado} onChange={(e) => setFEstado(e.target.value as any)}>
             <option value="todas">Todas</option>
             <option value="pendiente">Pendiente</option>
             <option value="revisada">Revisada</option>
             <option value="aprobada">Aprobada</option>
             <option value="rechazada">Suspendida</option>
           </select>
-
-          <select
-            className="border rounded px-2 py-1 text-sm"
-            value={fTarea}
-            onChange={(e) => setFTarea(e.target.value)}
-          >
+          <select className="border rounded px-2 py-1 text-sm" value={fTarea} onChange={(e) => setFTarea(e.target.value)}>
             <option value="todas">Todas las tareas</option>
             {tareasEnLista.map((tid) => (
               <option key={tid} value={tid}>
@@ -406,21 +367,8 @@ export default function MaestroEntregasPage() {
               </option>
             ))}
           </select>
-
-          <input
-            type="date"
-            className="border rounded px-2 py-1 text-sm"
-            value={fDesde}
-            onChange={(e) => setFDesde(e.target.value)}
-          />
-          <input
-            type="date"
-            className="border rounded px-2 py-1 text-sm"
-            value={fHasta}
-            onChange={(e) => setFHasta(e.target.value)}
-          />
-
-          <Button variant="outline" onClick={exportCSV}>Exportar CSV</Button>
+          <input type="date" className="border rounded px-2 py-1 text-sm" value={fDesde} onChange={(e) => setFDesde(e.target.value)} />
+          <input type="date" className="border rounded px-2 py-1 text-sm" value={fHasta} onChange={(e) => setFHasta(e.target.value)} />
         </div>
       </div>
 
@@ -435,10 +383,8 @@ export default function MaestroEntregasPage() {
               const createdAtMs = toDate(e.createdAt)?.getTime();
               const link = e.linkURL || e.linkUrl || '';
               const comentario = comentarios[e.id] ?? '';
-
-              const tareaTitulo = e.tareaId
-                ? tasksById[e.tareaId]?.title ?? e.tareaId
-                : '—';
+              const notaTxt = notas[e.id] ?? '';
+              const tareaTitulo = e.tareaId ? (tasksById[e.tareaId]?.title ?? e.tareaId) : '—';
 
               return (
                 <Card key={e.id}>
@@ -448,9 +394,14 @@ export default function MaestroEntregasPage() {
                         {(e.alumnoNombre || 'Alumno') + ' ' + (e.alumnoApellidos || '')}
                         <span className="text-muted-foreground font-normal"> — {tareaTitulo}</span>
                       </span>
-                      <Badge className={`border ${statusClass[e.status || 'pendiente']}`}>
-                        {statusLabel[e.status || 'pendiente']}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className={`border ${statusClass[e.status || 'pendiente']}`}>
+                          {statusLabel[e.status || 'pendiente']}
+                        </Badge>
+                        <span className="text-sm font-semibold">
+                          Nota: {e.nota != null ? e.nota : '—'}
+                        </span>
+                      </div>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -468,7 +419,7 @@ export default function MaestroEntregasPage() {
                       )}
                     </div>
 
-                    {/* Comentario (auto-guardado) */}
+                    {/* Comentario (autosave) */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Comentario del docente</label>
                       <textarea
@@ -478,45 +429,35 @@ export default function MaestroEntregasPage() {
                         onChange={(ev) => onChangeComentario(e.id, ev.target.value)}
                       />
                       <div className="text-xs">
-                        {busyId === e.id && !savedOk[e.id] && <span className="opacity-70">Guardando…</span>}
-                        {savedOk[e.id] && <span className="text-emerald-600">Guardado ✓</span>}
+                        {busyId === e.id && !savedOk[e.id + ':c'] && <span className="opacity-70">Guardando…</span>}
+                        {savedOk[e.id + ':c'] && <span className="text-emerald-600">Guardado ✓</span>}
+                      </div>
+                    </div>
+
+                    {/* Nota (autosave) */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Nota (0–10)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        className="w-32 rounded border px-2 py-1 text-sm"
+                        value={notaTxt}
+                        onChange={(e2) => onChangeNota(e.id, e2.target.value)}
+                      />
+                      <div className="text-xs">
+                        {busyId === e.id && !savedOk[e.id + ':n'] && <span className="opacity-70">Guardando…</span>}
+                        {savedOk[e.id + ':n'] && <span className="text-emerald-600">Guardado ✓</span>}
                       </div>
                     </div>
 
                     {/* Acciones de estado */}
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant={(e.status || 'pendiente') === 'pendiente' ? 'default' : 'outline'}
-                        onClick={() => setStatus(e.id, 'pendiente')}
-                        disabled={busyId === e.id}
-                      >
-                        Pendiente
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={e.status === 'revisada' ? 'default' : 'outline'}
-                        onClick={() => setStatus(e.id, 'revisada')}
-                        disabled={busyId === e.id}
-                      >
-                        Revisada
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={e.status === 'aprobada' ? 'default' : 'outline'}
-                        onClick={() => setStatus(e.id, 'aprobada')}
-                        disabled={busyId === e.id}
-                      >
-                        Aprobar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={e.status === 'rechazada' ? 'default' : 'outline'}
-                        onClick={() => setStatus(e.id, 'rechazada')}
-                        disabled={busyId === e.id}
-                      >
-                        Suspender
-                      </Button>
+                      <Button size="sm" variant={(e.status || 'pendiente') === 'pendiente' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'pendiente')} disabled={busyId === e.id}>Pendiente</Button>
+                      <Button size="sm" variant={e.status === 'revisada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'revisada')} disabled={busyId === e.id}>Revisada</Button>
+                      <Button size="sm" variant={e.status === 'aprobada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'aprobada')} disabled={busyId === e.id}>Aprobar</Button>
+                      <Button size="sm" variant={e.status === 'rechazada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'rechazada')} disabled={busyId === e.id}>Suspender</Button>
                     </div>
                   </CardContent>
                 </Card>

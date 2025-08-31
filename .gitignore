@@ -15,3 +15,6 @@ ui-debug.log
 firebase-export-*
 serviceAccount*.json
 *-firebase-adminsdk-*.json
+.env
+.env.*
+functions/lib/
