@@ -1,3 +1,4 @@
+// app/maestro/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -59,6 +60,7 @@ export default function MaestroPage() {
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {/* Header */}
       <div className="mb-12">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -73,8 +75,12 @@ export default function MaestroPage() {
 
           {/* Acciones rápidas */}
           <div className="flex items-center gap-2">
-            <Button onClick={() => router.push('/maestro/entregas')}>Ver entregas</Button>
-            <Button asChild><Link href="/maestro/familias">Gestionar familias</Link></Button>
+            <Button onClick={() => router.push('/maestro/entregas')}>
+              Gestionar entregas
+            </Button>
+            <Button asChild>
+              <Link href="/maestro/familias">Gestionar familias</Link>
+            </Button>
             <Button variant="outline" onClick={logout}>Salir</Button>
           </div>
         </div>

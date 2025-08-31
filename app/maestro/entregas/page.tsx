@@ -1,3 +1,4 @@
+// app/maestro/entregas/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -17,6 +18,7 @@ type Entrega = {
   linkUrl?: string;
   createdAt?: any;
   status?: 'pendiente' | 'revisada' | 'aprobada' | 'rechazada';
+  comentarioDocente?: string;
   familyId?: string;
   uid?: string;
   source?: 'public' | 'auth';
@@ -31,6 +33,7 @@ export default function MaestroEntregasPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [filtro, setFiltro] = useState<'todas' | NonNullable<Entrega['status']>>('todas');
+  const [comentarios, setComentarios] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (loading) return;
@@ -45,15 +48,27 @@ export default function MaestroEntregasPage() {
         if (createdAt instanceof Timestamp) createdAt = createdAt.toDate();
         else if (createdAt && typeof createdAt.toDate === 'function') createdAt = createdAt.toDate();
         else if (typeof createdAt === 'number') createdAt = new Date(createdAt);
+
         return {
           id: d.id,
           ...(data as any),
           createdAt,
           linkURL: data?.linkURL ?? data?.linkUrl ?? '',
           status: (data?.status as Entrega['status']) ?? 'pendiente',
+          comentarioDocente: data?.comentarioDocente ?? '',
         };
       });
+
       setItems(rows);
+      // Prefill comentarios si no existen en el estado
+      setComentarios((prev) => {
+        const next = { ...prev };
+        rows.forEach((e) => {
+          if (next[e.id] === undefined) next[e.id] = e.comentarioDocente ?? '';
+        });
+        return next;
+      });
+
       setLoadingList(false);
     }, () => setLoadingList(false));
 
@@ -65,6 +80,17 @@ export default function MaestroEntregasPage() {
       setBusyId(id);
       await updateDoc(doc(db, 'entregas', id), { status });
       setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function guardarComentario(id: string) {
+    const texto = comentarios[id] ?? '';
+    try {
+      setBusyId(id);
+      await updateDoc(doc(db, 'entregas', id), { comentarioDocente: texto, updatedAt: new Date() });
+      setItems((prev) => prev.map((e) => (e.id === id ? { ...e, comentarioDocente: texto } : e)));
     } finally {
       setBusyId(null);
     }
@@ -96,12 +122,16 @@ export default function MaestroEntregasPage() {
 
         <div className="flex items-center gap-2">
           <label className="text-sm">Estado:</label>
-          <select className="border rounded px-2 py-1 text-sm" value={filtro} onChange={(e) => setFiltro(e.target.value as any)}>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value as any)}
+          >
             <option value="todas">Todas</option>
             <option value="pendiente">Pendiente</option>
             <option value="revisada">Revisada</option>
             <option value="aprobada">Aprobada</option>
-            <option value="rechazada">Rechazada</option>
+            <option value="rechazada">Suspendida</option>
           </select>
         </div>
       </div>
@@ -118,6 +148,8 @@ export default function MaestroEntregasPage() {
               : typeof (e.createdAt as any)?.toMillis === 'function' ? (e.createdAt as any).toMillis()
               : undefined;
             const link = e.linkURL || e.linkUrl || '';
+            const texto = comentarios[e.id] ?? e.comentarioDocente ?? '';
+
             return (
               <Card key={e.id}>
                 <CardHeader>
@@ -126,22 +158,84 @@ export default function MaestroEntregasPage() {
                     <span className="text-muted-foreground font-normal"> — Tarea {e.tareaId ?? '—'}</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm">
+                      {createdAtMs ? new Date(createdAtMs).toLocaleString() : '—'}
+                      {e.source && <span className="text-muted-foreground"> · {e.source}</span>}
+                    </p>
+                    <span className="text-xs px-2 py-1 rounded-full border capitalize">
+                      {e.status || 'pendiente'}
+                    </span>
+                  </div>
+
                   <p>
                     {link ? (
-                      <a href={link} target="_blank" rel="noreferrer" className="text-blue-600 underline">Ver entrega</a>
-                    ) : <span className="text-muted-foreground">Sin archivo/enlace</span>}
+                      <a href={link} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                        Ver entrega
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">Sin archivo/enlace</span>
+                    )}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    Estado: <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
-                    {createdAtMs && ` · ${new Date(createdAtMs).toLocaleString()}`}
-                    {e.source && ` · ${e.source}`}
-                  </p>
+
+                  {/* Comentario del docente */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Comentario del docente</label>
+                    <textarea
+                      className="w-full min-h-[90px] rounded border p-2 text-sm"
+                      placeholder="Escribe un comentario para el alumno/familia…"
+                      value={texto}
+                      onChange={(ev) =>
+                        setComentarios((prev) => ({ ...prev, [e.id]: ev.target.value }))
+                      }
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => guardarComentario(e.id)}
+                        disabled={busyId === e.id}
+                      >
+                        Guardar comentario
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Acciones de estado */}
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant={(e.status || 'pendiente') === 'pendiente' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'pendiente')} disabled={busyId === e.id}>Pendiente</Button>
-                    <Button size="sm" variant={e.status === 'revisada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'revisada')} disabled={busyId === e.id}>Revisada</Button>
-                    <Button size="sm" variant={e.status === 'aprobada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'aprobada')} disabled={busyId === e.id}>Aprobada</Button>
-                    <Button size="sm" variant={e.status === 'rechazada' ? 'default' : 'outline'} onClick={() => setStatus(e.id, 'rechazada')} disabled={busyId === e.id}>Rechazada</Button>
+                    <Button
+                      size="sm"
+                      variant={(e.status || 'pendiente') === 'pendiente' ? 'default' : 'outline'}
+                      onClick={() => setStatus(e.id, 'pendiente')}
+                      disabled={busyId === e.id}
+                    >
+                      Pendiente
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={e.status === 'revisada' ? 'default' : 'outline'}
+                      onClick={() => setStatus(e.id, 'revisada')}
+                      disabled={busyId === e.id}
+                    >
+                      Revisada
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={e.status === 'aprobada' ? 'default' : 'outline'}
+                      onClick={() => setStatus(e.id, 'aprobada')}
+                      disabled={busyId === e.id}
+                    >
+                      Aprobar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={e.status === 'rechazada' ? 'default' : 'outline'}
+                      onClick={() => setStatus(e.id, 'rechazada')}
+                      disabled={busyId === e.id}
+                    >
+                      Suspender
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
