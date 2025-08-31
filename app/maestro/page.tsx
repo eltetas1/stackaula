@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 import { logout } from '@/hooks/useAuthUser';
-import { useAuthClaims } from '@/hooks/useAuthClaims';
+import { useUserRole } from '@/hooks/useUserRole';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,11 +39,9 @@ export default function MaestroPage() {
 
   const { subjects, loading: loadingSubjects } = useSubjects();
 
-  const { user, claims, loading } = useAuthClaims();
-  const role = (claims?.role as string | undefined) || null;
+  // 🔴 ahora leemos el rol desde Firestore (users/{uid})
+  const { user, role, loading } = useUserRole();
   const isTeacher = role === 'admin' || role === 'teacher';
-
-  const router = useRouter();
 
   if (loading) {
     return (
@@ -93,16 +90,15 @@ export default function MaestroPage() {
             </div>
           </div>
 
-      
-              {/* >>> Acceso directo a familias (nuevo destino) */}
-              <div className="flex items-center gap-2">
-                <Button asChild>
-                  <Link href="/maestro/familias">Gestionar familias</Link>
-                </Button>
-                <Button variant="outline" onClick={logout}>
-                  Salir
-                </Button>
-              </div>
+          {/* Acceso directo a familias */}
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link href="/maestro/familias">Gestionar familias</Link>
+            </Button>
+            <Button variant="outline" onClick={logout}>
+              Salir
+            </Button>
+          </div>
         </div>
       </div>
 
