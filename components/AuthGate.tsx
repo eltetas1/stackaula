@@ -1,33 +1,90 @@
 'use client';
-import { useState } from 'react';
+
+import React, { useState } from 'react';
 import { useAuthUser, loginEmail, logout } from '@/hooks/useAuthUser';
+import { Button } from '@/components/ui/button';
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, userDoc, loading } = useAuthUser();
-  const [email, setEmail] = useState('moodlehamza@gmail.com');
-  const [pass, setPass] = useState('17BJ#Moodle');
+type Props = {
+  children: React.ReactNode;
+  // opcional: restringir por rol
+  requireRole?: 'teacher' | 'family';
+};
 
-  if (loading) return <p className="p-6">Cargando…</p>;
+export function AuthGate({ children, requireRole }: Props) {
+  const { user, loading } = useAuthUser();
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  if (!user) {
-    return (
-      <div className="p-6 space-y-2">
-        <h3>Login</h3>
-        <input className="border p-2 w-64" value={email} onChange={e=>setEmail(e.target.value)} />
-        <input className="border p-2 w-64" type="password" value={pass} onChange={e=>setPass(e.target.value)} />
-        <button className="border p-2" onClick={()=>loginEmail(email, pass)}>Entrar</button>
-      </div>
-    );
+  if (loading) {
+    return <div className="p-6">Cargando…</div>;
   }
 
+  // Si hay usuario, opcionalmente comprobamos el rol
+  if (user) {
+    if (requireRole && user.role !== requireRole) {
+      return (
+        <div className="p-6 space-y-3">
+          <p>No tienes permisos para acceder a este contenido.</p>
+          <div className="flex gap-2">
+            <Button onClick={() => logout()}>Cerrar sesión</Button>
+          </div>
+        </div>
+      );
+    }
+    // Usuario válido → muestra el contenido protegido
+    return <>{children}</>;
+  }
+
+  // No hay usuario → formulario de login
+  const onLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await loginEmail(email.trim(), pass);
+    } catch (err: any) {
+      console.error(err);
+      setError('No se pudo iniciar sesión. Revisa el correo/contraseña.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div>
-      <div className="p-3 border-b text-sm flex items-center gap-2">
-        <span>Usuario: {user.email}</span>
-        <span className="px-2 py-0.5 border rounded">{userDoc?.role ?? 'sin rol'}</span>
-        <button className="ml-auto border px-2 py-1" onClick={logout}>Salir</button>
-      </div>
-      {children}
+    <div className="max-w-sm p-6">
+      <h2 className="text-xl font-semibold mb-3">Iniciar sesión</h2>
+      <form onSubmit={onLogin} className="space-y-3">
+        <div>
+          <label className="block text-sm">Correo</label>
+          <input
+            type="email"
+            className="w-full border rounded p-2"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm">Contraseña</label>
+          <input
+            type="password"
+            className="w-full border rounded p-2"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button type="submit" disabled={busy} className="w-full">
+          {busy ? 'Entrando…' : 'Entrar'}
+        </Button>
+      </form>
     </div>
   );
 }
+
+export default AuthGate;
