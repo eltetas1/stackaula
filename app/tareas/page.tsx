@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -8,40 +8,35 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 type Entrega = { id: string; familyId: string; tareaId: string; linkURL: string };
 
 export default function TareasPage() {
-  const { user, loading } = useAuthUser(); // user?.role = 'teacher' | 'family'
+  const { user, loading } = useAuthUser();
   const [entregas, setEntregas] = useState<Entrega[]>([]);
   const [entregasLoading, setEntregasLoading] = useState(false);
 
-  // Calculamos si el usuario puede leer entregas
   const canReadEntregas = useMemo(() => {
     return !!user && (user.role === 'teacher' || user.role === 'family');
   }, [user]);
 
-  // 1) Tareas/Avisos: (público). — tu lógica habitual aquí —
+  // TODO: aquí va tu fetch de TAREAS públicas (avisos con type = 'tarea')
 
-  // 2) ENTREGAS: solo si el usuario tiene permisos
   useEffect(() => {
     if (loading) return;
-    if (!canReadEntregas) return;
+    if (!canReadEntregas) {
+      setEntregas([]);
+      return;
+    }
 
     const fetchEntregas = async () => {
       setEntregasLoading(true);
       try {
-        let qRef;
-        if (user!.role === 'teacher') {
-          qRef = query(collection(db, 'entregas'));
-        } else {
-          // familia: solo sus entregas
-          qRef = query(
-            collection(db, 'entregas'),
-            where('familyId', '==', user!.familyId)
-          );
-        }
-        const snap = await getDocs(qRef);
-        setEntregas(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      } catch (err) {
-        console.error('No se pudieron cargar entregas:', err);
-        setEntregas([]);
+        const q =
+          user!.role === 'teacher'
+            ? query(collection(db, 'entregas'))
+            : query(collection(db, 'entregas'), where('familyId', '==', user!.familyId));
+        const snap = await getDocs(q);
+        setEntregas(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+      } catch (e) {
+        console.error('Error cargando entregas:', e);
+        setEntregas([]); // no bloquees la UI
       } finally {
         setEntregasLoading(false);
       }
@@ -50,12 +45,11 @@ export default function TareasPage() {
     fetchEntregas();
   }, [loading, canReadEntregas, user]);
 
-  // ---- RENDER ----
   if (loading) return <div className="p-4">Cargando…</div>;
 
   return (
     <main className="p-4">
-      {/* 🔹 Lista de tareas públicas aquí */}
+      {/* Aquí renderiza tus tareas públicas */}
 
       {canReadEntregas ? (
         <section className="mt-8">
@@ -66,7 +60,7 @@ export default function TareasPage() {
             <p>No hay entregas.</p>
           ) : (
             <ul className="list-disc pl-5">
-              {entregas.map(e => (
+              {entregas.map((e) => (
                 <li key={e.id}>
                   {e.tareaId} — {e.linkURL}
                 </li>
