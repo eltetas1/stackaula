@@ -1,80 +1,76 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { loginEmail } from '@/hooks/useAuthUser';
-import { getIdTokenResult } from 'firebase/auth';
+import { useAuthUser, loginEmail } from '@/hooks/useAuthUser';
+import { Button } from '@/components/ui/button';
 
 export default function LoginPage() {
+  const { user, loading } = useAuthUser();
+  const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Si ya está logueado, redirige automáticamente
+  useEffect(() => {
+    if (loading) return;
+    if (user) {
+      const dest = user.role === 'teacher' ? '/maestro' : '/tareas';
+      router.replace(dest);
+    }
+  }, [user, loading, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setBusy(true);
     try {
-      setLoading(true);
-      setErr(null);
-
-      const cred = await loginEmail(email.trim(), pass);
-      const token = await getIdTokenResult(cred.user, true);
-      const role = token.claims.role as string | undefined;
-
-      if (role === 'family') {
-        router.push('/familia');
-      } else if (role === 'admin' || role === 'teacher') {
-        router.push('/maestro');
-      } else {
-        // Si no hay rol definido, te mando al inicio (o donde prefieras)
-        router.push('/');
-      }
-    } catch (e: any) {
-      // Traducción rápida de errores comunes de Firebase Auth
-      const msg = String(e?.code || e?.message || '')
-        .replace('Firebase:', '')
-        .trim();
-
-      if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
-        setErr('Credenciales incorrectas.');
-      } else if (msg.includes('auth/user-not-found')) {
-        setErr('No existe una cuenta con ese email.');
-      } else if (msg.includes('auth/too-many-requests')) {
-        setErr('Demasiados intentos. Prueba más tarde.');
-      } else {
-        setErr('Error de inicio de sesión.');
-      }
+      await loginEmail(email.trim(), pass);
+      // El useEffect se encargará de redirigir cuando el hook detecte el usuario
+    } catch (err: any) {
+      setError('No se pudo iniciar sesión. Revisa correo/contraseña.');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div className="max-w-sm mx-auto p-6 space-y-3">
-      <h1 className="text-2xl font-bold">Acceder</h1>
-      <form onSubmit={onSubmit} className="space-y-2">
-        <input
-          className="border p-2 w-full"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          placeholder="Email"
-          autoComplete="email"
-          autoFocus
-        />
-        <input
-          className="border p-2 w-full"
-          value={pass}
-          onChange={e => setPass(e.target.value)}
-          type="password"
-          placeholder="Contraseña"
-          autoComplete="current-password"
-        />
-        <button className="border px-3 py-2 w-full" disabled={loading}>
-          {loading ? 'Entrando…' : 'Entrar'}
-        </button>
+    <main className="max-w-sm mx-auto p-6 space-y-4">
+      <h1 className="text-2xl font-semibold">Iniciar sesión</h1>
+
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div>
+          <label className="block text-sm mb-1">Correo</label>
+          <input
+            type="email"
+            className="w-full border rounded p-2"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm mb-1">Contraseña</label>
+          <input
+            type="password"
+            className="w-full border rounded p-2"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <Button type="submit" disabled={busy} className="w-full">
+          {busy ? 'Entrando…' : 'Entrar'}
+        </Button>
       </form>
-      {err && <p className="text-red-600 text-sm">{err}</p>}
-    </div>
+    </main>
   );
 }
