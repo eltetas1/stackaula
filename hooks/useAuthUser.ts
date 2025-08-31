@@ -1,53 +1,47 @@
+// hooks/useAuthUser.ts
 'use client';
 
 import { useEffect, useState } from 'react';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import { onIdTokenChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
-export type AppUser = {
-  uid: string;
-  email?: string | null;
-  role?: 'teacher' | 'family';
-  familyId?: string;
-};
+type Role = 'teacher' | 'family' | null;
 
 export function useAuthUser() {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<Role>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      try {
-        if (!fbUser) {
-          setUser(null);
-          return;
+    // Escuchamos cambios de sesión y refresco de token
+    const unsub = onIdTokenChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        try {
+          const ref = doc(db, 'users', u.uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data = snap.data() as { role?: string };
+            setRole((data.role as Role) ?? null);
+          } else {
+            setRole(null);
+          }
+        } catch {
+          setRole(null);
         }
-        const snap = await getDoc(doc(db, 'users', fbUser.uid));
-        console.log("User doc en Firestore:", snap.data());
-        const data = snap.exists() ? (snap.data() as any) : {};
-        setUser({
-          uid: fbUser.uid,
-          email: fbUser.email,
-          role: data.role,
-          familyId: data.familyId,
-        });
-      } finally {
-        setLoading(false);
+      } else {
+        setRole(null);
       }
+      setLoading(false);
     });
+
     return () => unsub();
   }, []);
 
-  return { user, loading };
-}
-
-// 👇 Estos dos exports arreglan tu build
-export async function loginEmail(email: string, password: string) {
-  return signInWithEmailAndPassword(auth, email, password);
+  return { user, role, loading };
 }
 
 export async function logout() {
-  return signOut(auth);
+  await signOut(auth);
 }
