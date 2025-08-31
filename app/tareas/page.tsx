@@ -1,12 +1,9 @@
 'use client';
 
-// 🔌 Interruptor para evitar consultas a /entregas hasta que todo esté listo
-const SHOW_ENTREGAS = false;
-
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, Query } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 type Entrega = { id: string; familyId: string; tareaId: string; linkURL: string };
 
@@ -15,31 +12,30 @@ export default function TareasPage() {
   const [entregas, setEntregas] = useState<Entrega[]>([]);
   const [entregasLoading, setEntregasLoading] = useState(false);
 
-  // Permisos calculados una sola vez por cambio de user/loading
+  // Calculamos si el usuario puede leer entregas
   const canReadEntregas = useMemo(() => {
     return !!user && (user.role === 'teacher' || user.role === 'family');
   }, [user]);
 
   // 1) Tareas/Avisos: (público). — tu lógica habitual aquí —
 
-  // 2) ENTREGAS: SOLO si el interruptor está ON y hay sesión con permisos
+  // 2) ENTREGAS: solo si el usuario tiene permisos
   useEffect(() => {
     if (loading) return;
-    if (!SHOW_ENTREGAS) return;        // ⛔️ corta aquí mientras el switch está en false
-    if (!canReadEntregas) {
-      setEntregas([]);
-      return;
-    }
+    if (!canReadEntregas) return;
 
     const fetchEntregas = async () => {
       setEntregasLoading(true);
       try {
-        let qRef: Query;
+        let qRef;
         if (user!.role === 'teacher') {
           qRef = query(collection(db, 'entregas'));
         } else {
           // familia: solo sus entregas
-          qRef = query(collection(db, 'entregas'), where('familyId', '==', user!.familyId));
+          qRef = query(
+            collection(db, 'entregas'),
+            where('familyId', '==', user!.familyId)
+          );
         }
         const snap = await getDocs(qRef);
         setEntregas(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
@@ -59,10 +55,9 @@ export default function TareasPage() {
 
   return (
     <main className="p-4">
-      {/* 🔹 Lista de tareas públicas aquí (se puede renderizar siempre) */}
+      {/* 🔹 Lista de tareas públicas aquí */}
 
-      {/* 🔒 Bloque de entregas: solo si el interruptor está ON y hay permisos */}
-      {SHOW_ENTREGAS && canReadEntregas ? (
+      {canReadEntregas ? (
         <section className="mt-8">
           <h2 className="text-xl font-semibold">Entregas</h2>
           {entregasLoading ? (
