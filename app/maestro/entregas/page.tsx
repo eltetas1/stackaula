@@ -1,83 +1,117 @@
+// app/maestro/entregas/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useAuthUser } from '@/hooks/useAuthUser';
+import Link from 'next/link';
+import { doc, collection, onSnapshot, orderBy, query, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  orderBy,
-  query,
-  updateDoc,
-  doc,
-} from 'firebase/firestore';
+
+import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Entrega = {
   id: string;
-  tareaId: string;
-  alumnoNombre: string;
-  alumnoApellidos: string;
-  linkURL: string;
-  createdAt?: any; // Timestamp
+  tareaId?: string;
+  alumnoNombre?: string;
+  alumnoApellidos?: string;
+  linkURL?: string;        // soportamos ambas
+  linkUrl?: string;        // soportamos ambas
+  createdAt?: any;         // Firestore Timestamp | number | Date
   status?: 'pendiente' | 'revisada' | 'aprobada' | 'rechazada';
   familyId?: string;
   uid?: string;
   source?: 'public' | 'auth';
+  [k: string]: any;
 };
 
 export default function MaestroEntregasPage() {
-  const { user, loading } = useAuthUser();
-  const isTeacher = useMemo(() => user?.role === 'teacher', [user]);
+  // 🔒 permisos basados en Firestore (users/{uid})
+  const { user, role, loading: loadingRole } = useUserRole();
+  const isTeacher = useMemo(() => role === 'teacher' || role === 'admin', [role]);
 
   const [items, setItems] = useState<Entrega[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
-  const [filtro, setFiltro] = useState<'todas' | Entrega['status']>('todas');
+  const [filtro, setFiltro] = useState<'todas' | NonNullable<Entrega['status']>>('todas');
 
+  // ▶️ Suscripción en tiempo real a la colección 'entregas'
   useEffect(() => {
-    if (loading) return;
+    if (loadingRole) return;
     if (!isTeacher) return;
 
-    const fetchEntregas = async () => {
-      setLoadingList(true);
-      const q = query(collection(db, 'entregas'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
-      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Entrega[];
-      setItems(rows);
-      setLoadingList(false);
-    };
+    setLoadingList(true);
+    const q = query(collection(db, 'entregas'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: Entrega[] = snap.docs.map((d) => {
+          const data = d.data() as any;
 
-    fetchEntregas();
-  }, [loading, isTeacher]);
+          // Normalizamos createdAt a Date
+          let created: Date | undefined;
+          const raw = data?.createdAt;
+          if (raw instanceof Timestamp) created = raw.toDate();
+          else if (raw && typeof raw.toDate === 'function') created = raw.toDate();
+          else if (typeof raw === 'number') created = new Date(raw);
+          else if (raw instanceof Date) created = raw;
+          else created = undefined;
+
+          return {
+            id: d.id,
+            ...data,
+            createdAt: created ?? data?.createdAt, // guardamos la Date si la hay
+            status: (data?.status as Entrega['status']) ?? 'pendiente',
+          } as Entrega;
+        });
+
+        setItems(rows);
+        setLoadingList(false);
+      },
+      () => setLoadingList(false)
+    );
+
+    return () => unsub();
+  }, [loadingRole, isTeacher]);
 
   async function setStatus(id: string, status: NonNullable<Entrega['status']>) {
     try {
       setBusyId(id);
       await updateDoc(doc(db, 'entregas', id), { status });
+      // Optimistic UI
       setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
     } finally {
       setBusyId(null);
     }
   }
 
-  if (loading) return <main className="p-6">Cargando…</main>;
-  if (!isTeacher)
+  if (loadingRole) return <main className="p-6">Cargando…</main>;
+
+  if (!user || !isTeacher) {
     return (
-      <main className="p-6">
+      <main className="container mx-auto p-6 space-y-4">
         <h1 className="text-xl font-semibold">Entregas</h1>
         <p className="text-muted-foreground">Acceso solo para profesorado.</p>
+        <Button asChild variant="outline">
+          <Link href="/maestro">Volver al panel</Link>
+        </Button>
       </main>
     );
+  }
 
   const visibles =
-    filtro === 'todas' ? items : items.filter((e) => (e.status || 'pendiente') === filtro);
+    filtro === 'todas' ? items : items.filter((e) => ((e.status || 'pendiente') === filtro));
 
   return (
     <main className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold">Entregas de alumnos</h1>
+        <div className="flex items-center gap-3">
+          <Button asChild variant="link" className="-ml-3">
+            <Link href="/maestro">← Volver</Link>
+          </Button>
+          <h1 className="text-2xl font-bold">Entregas de alumnos</h1>
+        </div>
+
         <div className="flex items-center gap-2">
           <label className="text-sm">Estado:</label>
           <select
@@ -102,34 +136,42 @@ export default function MaestroEntregasPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {visibles.map((e) => {
             const createdAtMs =
-              e.createdAt && typeof (e.createdAt as any).toMillis === 'function'
+              e?.createdAt instanceof Date
+                ? e.createdAt.getTime()
+                : typeof (e?.createdAt as any)?.toMillis === 'function'
                 ? (e.createdAt as any).toMillis()
                 : undefined;
+
+            const link = e.linkURL || e.linkUrl || '';
 
             return (
               <Card key={e.id}>
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    {e.alumnoNombre} {e.alumnoApellidos}{' '}
+                    {e.alumnoNombre ?? 'Alumno'} {e.alumnoApellidos ?? ''}{' '}
                     <span className="text-muted-foreground font-normal">
-                      — Tarea {e.tareaId}
+                      — Tarea {e.tareaId ?? '—'}
                     </span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p>
-                    <a
-                      href={e.linkURL}
-                      target="_blank"
-                      className="text-blue-600 underline"
-                      rel="noreferrer"
-                    >
-                      Ver entrega
-                    </a>
+                    {link ? (
+                      <a
+                        href={link}
+                        target="_blank"
+                        className="text-blue-600 underline"
+                        rel="noreferrer"
+                      >
+                        Ver entrega
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">Sin archivo/enlace</span>
+                    )}
                   </p>
+
                   <p className="text-sm text-muted-foreground">
-                    Estado:{' '}
-                    <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
+                    Estado: <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
                     {createdAtMs && ` · ${new Date(createdAtMs).toLocaleString()}`}
                     {e.source && ` · ${e.source}`}
                   </p>
