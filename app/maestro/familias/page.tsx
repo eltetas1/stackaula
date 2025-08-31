@@ -1,15 +1,16 @@
+// app/maestro/familias/page.tsx
 'use client';
 
 import Link from 'next/link';
-import { useAuthClaims } from '@/hooks/useAuthClaims';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateFamilyForm from '@/components/admin/CreateFamilyForm';
 
 export default function MaestroFamiliasPage() {
-  const { user, claims, loading } = useAuthClaims();
-  const role = (claims?.role as string | undefined) || null;
-  const isTeacher = role === 'admin' || role === 'teacher';
+  // 🔒 Permisos unificados: rol leído desde Firestore (users/{uid})
+  const { user, role, loading } = useUserRole();
+  const isTeacher = role === 'teacher' || role === 'admin';
 
   if (loading) {
     return (
@@ -24,15 +25,21 @@ export default function MaestroFamiliasPage() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="text-2xl font-bold">Acceso restringido</h1>
         <p className="mt-2">Necesitas una cuenta de maestro para acceder a esta página.</p>
-        <Button asChild className="mt-4">
-          <Link href="/login">Ir al login</Link>
-        </Button>
+        <div className="mt-6 flex gap-2">
+          <Button asChild>
+            <Link href="/login">Ir al login</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/maestro">Volver al panel</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Gestionar familias</h1>
@@ -48,6 +55,7 @@ export default function MaestroFamiliasPage() {
         </div>
       </div>
 
+      {/* Crear familia */}
       <Card>
         <CardHeader>
           <CardTitle>Crear familia</CardTitle>
