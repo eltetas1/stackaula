@@ -24,7 +24,7 @@ type Entrega = {
   alumnoApellidos: string;
   linkURL?: string; // soportamos ambas
   linkUrl?: string; // soportamos ambas
-  createdAt?: any; // Timestamp | Date | number
+  createdAt?: any;  // Timestamp | Date | number
   status?: 'pendiente' | 'revisada' | 'aprobada' | 'rechazada';
   familyId?: string;
   uid?: string;
@@ -34,10 +34,10 @@ type Entrega = {
 
 export default function MaestroEntregasPage() {
   const { user, loading } = useAuthUser();
-  const isTeacher = useMemo(
-    () => user?.role === 'teacher' || user?.role === 'admin',
-    [user]
-  );
+
+  // ✅ evita TS2367: casteamos a string para comparar libremente
+  const roleStr = useMemo(() => String(user?.role ?? ''), [user]);
+  const isTeacher = roleStr === 'teacher' || roleStr === 'admin';
 
   const [items, setItems] = useState<Entrega[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export default function MaestroEntregasPage() {
         const rows = snap.docs.map((d) => {
           const data = d.data() as any;
 
-          // Normalizamos createdAt a Date si es posible
+          // Normaliza createdAt -> Date si es posible
           let createdAt = data?.createdAt;
           if (createdAt instanceof Timestamp) createdAt = createdAt.toDate();
           else if (createdAt && typeof createdAt.toDate === 'function') createdAt = createdAt.toDate();
@@ -67,11 +67,12 @@ export default function MaestroEntregasPage() {
             id: d.id,
             ...(data as any),
             createdAt,
-            // si viene linkUrl en vez de linkURL, usamos cualquiera
+            // usa linkUrl si no viene linkURL
             linkURL: data?.linkURL ?? data?.linkUrl ?? '',
             status: (data?.status as Entrega['status']) ?? 'pendiente',
           } as Entrega;
         });
+
         setItems(rows);
         setLoadingList(false);
       },
@@ -175,6 +176,7 @@ export default function MaestroEntregasPage() {
                       <span className="text-muted-foreground">Sin archivo/enlace</span>
                     )}
                   </p>
+
                   <p className="text-sm text-muted-foreground">
                     Estado:{' '}
                     <b className="capitalize">{(e.status || 'pendiente').toString()}</b>
