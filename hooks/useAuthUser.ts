@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-type AppUser = {
+export type AppUser = {
   uid: string;
   email?: string | null;
   role?: 'teacher' | 'family';
@@ -24,36 +24,29 @@ export function useAuthUser() {
           setUser(null);
           return;
         }
-
-        // Lee el doc /users/{uid} SOLO si hay login
-        const ref = doc(db, 'users', fbUser.uid);
-        let role: any = undefined;
-        let familyId: any = undefined;
-
-        try {
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const d = snap.data() as any;
-            role = d.role;
-            familyId = d.familyId;
-          }
-        } catch (e) {
-          console.error('Error leyendo /users:', e);
-        }
-
+        const snap = await getDoc(doc(db, 'users', fbUser.uid));
+        const data = snap.exists() ? (snap.data() as any) : {};
         setUser({
           uid: fbUser.uid,
           email: fbUser.email,
-          role,
-          familyId,
+          role: data.role,
+          familyId: data.familyId,
         });
       } finally {
         setLoading(false);
       }
     });
-
     return () => unsub();
   }, []);
 
   return { user, loading };
+}
+
+// 👇 Estos dos exports arreglan tu build
+export async function loginEmail(email: string, password: string) {
+  return signInWithEmailAndPassword(auth, email, password);
+}
+
+export async function logout() {
+  return signOut(auth);
 }
