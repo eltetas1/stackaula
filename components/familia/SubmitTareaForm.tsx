@@ -33,7 +33,6 @@ export default function SubmitTareaForm({ tareaId }: Props) {
       return;
     }
 
-    // validación sencilla del enlace
     if (!/^https?:\/\//i.test(linkURL.trim())) {
       setError('Introduce un enlace válido (http/https).');
       return;
@@ -43,7 +42,7 @@ export default function SubmitTareaForm({ tareaId }: Props) {
       setSending(true);
       await addDoc(collection(db, 'entregas'), {
         tareaId,
-        familyId: user!.familyId,       // 🔒 se toma del /users, no del input
+        familyId: user!.familyId, // 🔒 se obtiene del usuario logueado
         linkURL: linkURL.trim(),
         createdAt: serverTimestamp(),
       });
@@ -51,7 +50,6 @@ export default function SubmitTareaForm({ tareaId }: Props) {
       setLinkURL('');
     } catch (err: any) {
       console.error('Error creando entrega:', err);
-      // Muestra un mensaje claro si chocan las reglas
       setError('No se pudo registrar la entrega. ¿Tienes permisos y sesión iniciada?');
     } finally {
       setSending(false);

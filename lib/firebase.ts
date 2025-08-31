@@ -15,6 +15,12 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
+import { setLogLevel } from 'firebase/firestore';
+// ...
+if (process.env.NODE_ENV !== 'production') {
+  setLogLevel('debug');
+}
+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);

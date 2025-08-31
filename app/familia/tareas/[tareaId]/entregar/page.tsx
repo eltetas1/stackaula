@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useAuthClaims } from '@/hooks/useAuthClaims';
 import { Button } from '@/components/ui/button';
 import SubmitTareaForm from '@/components/familia/SubmitTareaForm';
-import { db } from '@/lib/firebaseClient';
+import { db } from '@/lib/firebaseClient'; // si en tu app usas '@/lib/firebase', cámbialo aquí también
 import { doc, getDoc } from 'firebase/firestore';
 import { ensureFamilyClaims } from '@/lib/ensureFamilyClaims';
 
@@ -17,12 +17,14 @@ export default function EntregarTareaPage() {
   const { user, claims, loading } = useAuthClaims();
   const [tarea, setTarea] = useState<Tarea | null>(null);
 
+  // Asegura que las claims existen cuando el usuario inicia sesión (opcional)
   useEffect(() => {
     if (!loading && user) {
       ensureFamilyClaims().catch(() => {});
     }
   }, [loading, user]);
 
+  // Cargar la tarea pública desde /avisos/{tareaId}
   useEffect(() => {
     const fetch = async () => {
       const snap = await getDoc(doc(db, 'avisos', String(tareaId)));
@@ -31,6 +33,7 @@ export default function EntregarTareaPage() {
     if (tareaId) fetch();
   }, [tareaId]);
 
+  // Estados de acceso
   if (loading) return <div className="p-6">Cargando…</div>;
   if (!user || claims?.role !== 'family' || !claims?.familyId) {
     return (
@@ -42,9 +45,6 @@ export default function EntregarTareaPage() {
       </div>
     );
   }
-
-  const familyId = String(claims.familyId);
-  const alumno = String(claims.alumno || 'Alumno');
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-6">
@@ -58,13 +58,16 @@ export default function EntregarTareaPage() {
       {tarea ? (
         <div className="space-y-2">
           <h2 className="text-xl font-semibold">{tarea.title}</h2>
-          {tarea.body && <p className="text-muted-foreground whitespace-pre-line">{tarea.body}</p>}
+          {tarea.body && (
+            <p className="text-muted-foreground whitespace-pre-line">{tarea.body}</p>
+          )}
         </div>
       ) : (
         <p className="text-muted-foreground">Cargando tarea…</p>
       )}
 
-      <SubmitTareaForm tareaId={String(tareaId)} familyId={familyId} alumno={alumno} />
+      {/* El formulario ya NO necesita familyId ni alumno: los obtiene del usuario logueado */}
+      <SubmitTareaForm tareaId={String(tareaId)} />
     </div>
   );
 }

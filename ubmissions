@@ -1,0 +1,3 @@
+[35mapp/tareas/page.tsx[m[36m:[m[32m33[m[36m:[m            ? query([1;31mcollection(db, 'entregas'[m))
+[35mapp/tareas/page.tsx[m[36m:[m[32m34[m[36m:[m            : query([1;31mcollection(db, 'entregas'[m), where('familyId', '==', user!.familyId));
+[35mcomponents/familia/SubmitTareaForm.tsx[m[36m:[m[32m30[m[36m:[m      await addDoc([1;31mcollection(db, 'entregas'[m), {
