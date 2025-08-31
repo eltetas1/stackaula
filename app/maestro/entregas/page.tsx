@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import { logout } from '@/hooks/useAuthUser';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -43,6 +44,8 @@ export default function MaestroPage() {
   // Rol desde Firestore
   const { user, role, loading } = useUserRole();
   const isTeacher = role === 'admin' || role === 'teacher';
+
+  const router = useRouter();
 
   if (loading) {
     return (
@@ -91,10 +94,11 @@ export default function MaestroPage() {
             </div>
           </div>
 
-          {/* Acciones rápidas (AQUÍ ESTÁ EL BOTÓN NUEVO) */}
+          {/* Acciones rápidas */}
           <div className="flex items-center gap-2">
-            <Button asChild>
-              <Link href="/maestro/entregas">Ver entregas</Link>
+            {/* ✅ Navegación fiable con router.push */}
+            <Button onClick={() => router.push('/maestro/entregas')}>
+              Ver entregas
             </Button>
             <Button asChild>
               <Link href="/maestro/familias">Gestionar familias</Link>
