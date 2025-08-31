@@ -1,12 +1,12 @@
 // lib/firebase.ts
-import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import {
   getAuth,
   setPersistence,
   browserLocalPersistence,
-  Auth
+  connectAuthEmulator,
 } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -17,24 +17,27 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
-}
-
-auth = getAuth(app);
-db = getFirestore(app);
-
-// Persistencia en navegador (evita que se “pierda” la sesión entre recargas)
+// Persistencia para no “perder” la sesión al recargar
 if (typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence).catch(() => {
-    // Si falla (Safari ITP, etc.), seguimos sin reventar la app
-  });
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+  // Conectar emuladores si están definidos
+  const authEmu = process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+  const fsEmu = process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST;
+
+  if (authEmu && !(auth as any)._usingEmulator) {
+    const url = authEmu.startsWith('http') ? authEmu : `http://${authEmu}`;
+    connectAuthEmulator(auth, url, { disableWarnings: true });
+    (auth as any)._usingEmulator = true;
+  }
+  if (fsEmu && !(db as any)._usingEmulator) {
+    const [host, port] = fsEmu.split(':');
+    connectFirestoreEmulator(db, host, Number(port));
+    (db as any)._usingEmulator = true;
+  }
 }
 
 export { app, auth, db };
